@@ -1,4 +1,0 @@
-dnsq
-====
-
-DNS Query Tool
