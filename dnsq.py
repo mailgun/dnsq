@@ -50,7 +50,7 @@ def query_dns(hostname, record_type, ns_server=None):
             return [record.to_text() for record in records]
 
     # no entry?
-    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers), e:
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers) as e:
         return []
 
 
@@ -77,11 +77,11 @@ def mx_hosts_for(hostname):
         raise Exception("DNS failure for " + str(hostname))
 
     # no MX record:
-    except dns.resolver.NoAnswer, err:
+    except dns.resolver.NoAnswer as err:
         retval = [hostname]
 
     # invalid domain
-    except dns.resolver.NXDOMAIN, err:
+    except dns.resolver.NXDOMAIN as err:
         retval = []
 
     # empty label (ex: domain..com)
@@ -156,7 +156,7 @@ def spf_record_for(hostname, bypass_cache=True):
         if len(spf_records) == 1:
             return spf_records[0]
 
-    except Exception, e:
+    except Exception as e:
         log.exception(e)
 
     return ''
