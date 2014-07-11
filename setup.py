@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='dnsq',
-      version='1.1.2',
+      version='1.1.3',
       description='DNS Query Tool',
       long_description=open("README.rst").read(),
       author='Rackspace',
