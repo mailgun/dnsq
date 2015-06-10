@@ -6,7 +6,6 @@ Only two functions matter here:
     - mx_hosts_for() : returns a list of MX hosts for a given domain
 '''
 import socket
-import time
 import dns
 import dns.exception
 import dns.resolver
@@ -50,7 +49,7 @@ def query_dns(hostname, record_type, ns_server=None):
             return [record.to_text() for record in records]
 
     # no entry?
-    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers) as e:
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
         return []
 
 
@@ -77,11 +76,11 @@ def mx_hosts_for(hostname):
         raise Exception("DNS failure for " + str(hostname))
 
     # no MX record:
-    except dns.resolver.NoAnswer as err:
+    except dns.resolver.NoAnswer:
         retval = [hostname]
 
     # invalid domain
-    except dns.resolver.NXDOMAIN as err:
+    except dns.resolver.NXDOMAIN:
         retval = []
 
     # empty label (ex: domain..com)
