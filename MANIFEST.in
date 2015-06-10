@@ -1,4 +1,3 @@
-recursive-include *.py
 include LICENSE/LICENSE_NOMINUM
 include LICENSE/LICENSE_RACKSPACE
 include README.rst
