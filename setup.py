@@ -11,7 +11,7 @@ setup(name='dnsq',
       py_modules=['dnsq'],
       zip_safe=True,
       install_requires=[
-        'dnspython==1.11.1',
+        'dnspython==1.12.0',
         'expiringdict>=1.1',
       ],
       )
