@@ -88,7 +88,7 @@ def mx_hosts_for(hostname):
         retval = []
 
     # filter out invalid queries (tld does not exist)
-    dns_attention_string = ''.join(['your-dns-needs-immediate-attention.', hostname , '.'])
+    dns_attention_string = ''.join(['your-dns-needs-immediate-attention.', hostname.rstrip('.'), '.'])
     retval = [s for s in retval if s != dns_attention_string]
 
     # strip ending . and filter None
