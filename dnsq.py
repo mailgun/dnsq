@@ -176,12 +176,12 @@ def exec_query(hostname, record_type, ns_server=None):
             resolver = get_resolver()
             resolver.nameservers = [ns_server]
             try:
-                return resolver.query(hostname, record_type, tcp=True)
+                return resolver.query(hostname, record_type)
             except dns.exception.Timeout:
                 pass
 
         # if it's not specified or timed out then use default nameserver
-        return get_resolver().query(hostname, record_type, tcp=True)
+        return get_resolver().query(hostname, record_type)
 
     # in case of timeouts and socket errors return []
     except dns.exception.Timeout:
