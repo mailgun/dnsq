@@ -93,7 +93,7 @@ def mx_hosts_for(hostname):
 
     # strip ending . and filter None
     retval = [h.strip('.') for h in retval]
-    return filter(lambda x: x, retval)
+    return [x for x in retval if x]
 
 
 def ptr_record_for(ipaddress):
