@@ -1,4 +1,5 @@
 from setuptools import setup
+import sys
 
 setup(name='dnsq',
       version='1.1.6',
@@ -11,7 +12,7 @@ setup(name='dnsq',
       py_modules=['dnsq'],
       zip_safe=True,
       install_requires=[
-        'dnspython>=1.11.1',
+        'dnspython>=1.11.1' if (sys.version_info < (3,0)) else 'dnspython3>=1.11.1',
         'expiringdict>=1.1',
       ],
       )
