@@ -17,7 +17,27 @@ from itertools import groupby
 from random import shuffle
 from expiringdict import ExpiringDict
 
+
+# create logger
 log = logging.getLogger(__name__)
+# log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
+
+# create console handler and set level to debug
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+# create formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# add formatter to ch
+ch.setFormatter(formatter)
+
+# add ch to logger
+log.addHandler(ch)
+
+
+
 
 # DNS resolver/cache for querying MX records
 DNS_CACHE_LIFE_SECONDS=240.0
@@ -190,7 +210,6 @@ def exec_query(hostname, record_type, ns_server=None):
     except socket.error:
         return []
 
-
 def get_resolver():
     """Helper: return default DNS resolver object.
     """
@@ -199,13 +218,42 @@ def get_resolver():
     resolver.lifetime = DNS_LIFETIME_TIMEOUT_SECONDS
     return resolver
 
+def get_ttl(hostname, record_type='A'):
+    """return TTL for a given hostname.
+    """
+    # gather authoritative nameserver to send query to it
+    log.debug("get_ttl: entered function, hostname: %s" % (hostname))
+    try:
+        ns = get_primary_nameserver(hostname)
+        log.debug("get_ttl: get_primary_nameserver returned: %s" % (ns))
+    # in case of timeouts and socket errors return []
+    except dns.exception.Timeout:
+        log.debug("get_ttl: ns.exception.Timeout! for hostname %s @ns: %s" % (hostname, ns))
+        return []
+    try:
+        answer = exec_query(hostname, record_type, ns)
+        if answer:
+            log.debug("get_ttl: exec_query returned: %s" % (answer))
+            # approach: ttl has to be gathered from answer
+            return answer.rrset.ttl
+        else:
+            log.debug("get_ttl: exec_query answer was empty!")
+            return []
+    # non-existing domain
+    except dns.resolver.NXDOMAIN:
+        log.debug("get_ttl: dns.resolver.NXDOMAIN!")
+        return []
+
 
 def get_primary_nameserver(hostname):
     """Query DNS for the primary nameserver (SOA) for the given hostname.
     """
+    log.debug("get_primary_nameserver: entered function, hostname: %s" % (hostname))
     dq = deque(hostname.split('.'))
     while len(dq) > 1:
+        log.debug("get_primary_nameserver: dq: %s" % (dq))
         soa = query_dns('.'.join(dq), 'SOA')
         if soa:
+            log.debug("get_primary_nameserver: soa: %s" % (soa))
             return soa[0].split(" ")[0].strip(".")
         dq.popleft()
