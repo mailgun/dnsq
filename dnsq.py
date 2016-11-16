@@ -1,36 +1,39 @@
-'''
+"""
 High-level DNS library built on top of dnspython.
 Only two functions matter here:
 
     - query_dns()    : runs an arbitrary DNS query
     - mx_hosts_for() : returns a list of MX hosts for a given domain
-'''
+"""
+import logging
 import socket
+import threading
+from collections import deque
+from itertools import groupby
+from random import shuffle
+
 import dns
 import dns.exception
 import dns.resolver
 import dns.reversename
-import logging
-
-from collections import deque
-from itertools import groupby
-from random import shuffle
 from expiringdict import ExpiringDict
 
-log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
-# DNS resolver/cache for querying MX records
-DNS_CACHE_LIFE_SECONDS=240.0
-DNS_TIMEOUT_SECONDS=3.0          # timeout per DNS server
-DNS_LIFETIME_TIMEOUT_SECONDS=5.2 # total timeout per DNS request
-PTR_CACHE_LEN=512
+_DNS_CACHE_LIFE_SECONDS = 240.0
+_DNS_TIMEOUT_SECONDS = 3.0  # timeout per DNS server
+_DNS_LIFETIME_TIMEOUT_SECONDS = 5.2  # total timeout per DNS request
+_PTR_CACHE_LEN = 512
 
 # This cache is used to store PTR records for IP addresses
-ptr_cache = ExpiringDict(max_len=PTR_CACHE_LEN,
-                         max_age_seconds=DNS_CACHE_LIFE_SECONDS)
+_ptr_cache = ExpiringDict(max_len=_PTR_CACHE_LEN,
+                          max_age_seconds=_DNS_CACHE_LIFE_SECONDS)
+
+_thread_local = threading.local()
+_thread_local.resolver = None
 
 
-def query_dns(hostname, record_type, ns_server=None):
+def query_dns(hostname, record_type, name_srv=None):
     """
     Runs simple DNS queries, like:
         >>> query_dns('mailgun.net', 'txt')
@@ -38,18 +41,22 @@ def query_dns(hostname, record_type, ns_server=None):
     """
     try:
         # if nameserver was specified, convert it into IP:
-        if ns_server:
-            ips = query_dns(ns_server, 'A')
+        name_srv_ip = None
+        if name_srv:
+            ips = query_dns(name_srv, 'A')
             if ips:
-                ns_server = ips[0]
-        records = exec_query(hostname, record_type, ns_server)
+                name_srv_ip = ips[0]
+
+        records = _exec_query(hostname, record_type, name_srv_ip)
         if record_type.lower() == 'txt':
-            return [record.to_text().strip("\"").replace('" "', '') for record in records]
+            return [record.to_text().strip("\"").replace('" "', '') for record
+                    in records]
         else:
             return [record.to_text() for record in records]
 
     # no entry?
-    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
+    except (
+    dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
         return []
 
 
@@ -65,8 +72,9 @@ def mx_hosts_for(hostname):
     """
     retval = []
     try:
-        answers = sorted(exec_query(hostname, 'MX'))
-        for mx_pref, grouper in groupby(answers, lambda entry: entry.preference):
+        answers = sorted(_exec_query(hostname, 'MX'))
+        for mx_pref, grouper in groupby(answers,
+                                        lambda entry: entry.preference):
             group = [entry.exchange.to_text() for entry in grouper]
             shuffle(group)
             retval += group
@@ -88,7 +96,8 @@ def mx_hosts_for(hostname):
         retval = []
 
     # filter out invalid queries (tld does not exist)
-    dns_attention_string = ''.join(['your-dns-needs-immediate-attention.', hostname.rstrip('.'), '.'])
+    dns_attention_string = ''.join(
+        ['your-dns-needs-immediate-attention.', hostname.rstrip('.'), '.'])
     retval = [s for s in retval if s != dns_attention_string]
 
     # strip ending . and filter None
@@ -97,7 +106,7 @@ def mx_hosts_for(hostname):
 
 
 def ptr_record_for(ipaddress):
-    '''
+    """
     Performs reverse DNS lookup on a given IP address.
     This is a replacement for socket.gethostbyaddr(), but with the following
     differences:
@@ -111,15 +120,15 @@ def ptr_record_for(ipaddress):
         "nuq04s08-in-f27.1e100.net"
         >>> ptr_record_for('74.125.224.1')
         None
-    '''
+    """
     if ipaddress == '127.0.0.1':
         return 'localhost'
 
     MISSING = "unknown"
-    retval  = None
+    retval = None
 
     # see if we have it cached:
-    cached_value = ptr_cache.get(ipaddress)
+    cached_value = _ptr_cache.get(ipaddress)
     if cached_value:
         return cached_value if cached_value != MISSING else None
 
@@ -131,14 +140,14 @@ def ptr_record_for(ipaddress):
         hosts = query_dns(inaddr_arpa_name, "PTR")
         if hosts:
             retval = hosts[0].strip('.')
-            ptr_cache[ipaddress] = retval
+            _ptr_cache[ipaddress] = retval
             # success: found the PTR record:
             return retval
     except:
         pass
 
     # no suitable PTR:
-    ptr_cache[ipaddress] = MISSING
+    _ptr_cache[ipaddress] = MISSING
     return None
 
 
@@ -151,7 +160,7 @@ def spf_record_for(hostname, bypass_cache=True):
     try:
         primary_ns = None
         if bypass_cache:
-            primary_ns = get_primary_nameserver(hostname)
+            primary_ns = _get_primary_nameserver(hostname)
 
         txt_records = query_dns(hostname, 'txt', primary_ns)
         spf_records = [r for r in txt_records if r.strip().startswith('v=spf')]
@@ -160,48 +169,57 @@ def spf_record_for(hostname, bypass_cache=True):
             return spf_records[0]
 
     except Exception as e:
-        log.exception(e)
+        _log.exception(e)
 
     return ''
 
 
-def exec_query(hostname, record_type, ns_server=None):
-    """Execute a DNS query against a given name source.
-
-    ns_server must be an IP address!!!
+def _exec_query(hostname, record_type, name_srv_ip=None):
+    """
+    Execute a DNS query against a given name source.
     """
     try:
-        # if nameserver specified then try it first
-        if ns_server:
-            resolver = get_resolver()
-            resolver.nameservers = [ns_server]
+        # if nameserver specified then try it first.
+        if name_srv_ip:
+            resolver = _new_resolver(name_srv_ip)
             try:
                 return resolver.query(hostname, record_type, tcp=True)
             except dns.exception.Timeout:
                 pass
 
         # if it's not specified or timed out then use default nameserver
-        return get_resolver().query(hostname, record_type, tcp=True)
+        return _get_default_resolver().query(hostname, record_type, tcp=True)
 
-    # in case of timeouts and socket errors return []
-    except dns.exception.Timeout:
+    except (dns.exception.Timeout,
+            dns.resolver.NoNameservers,
+            socket.error):
         return []
 
-    except socket.error:
-        return []
 
-
-def get_resolver():
-    """Helper: return default DNS resolver object.
+def _get_default_resolver():
     """
+    Returns DNS resolver instance for the calling thread.
+    """
+    resolver = getattr(_thread_local, 'resolver', None)
+    if resolver:
+        return resolver
+
+    _thread_local.resolver = _new_resolver()
+    return _thread_local.resolver
+
+
+def _new_resolver(name_srv_ip=None):
     resolver = dns.resolver.Resolver()
-    resolver.timeout = DNS_TIMEOUT_SECONDS
-    resolver.lifetime = DNS_LIFETIME_TIMEOUT_SECONDS
+    resolver.timeout = _DNS_TIMEOUT_SECONDS
+    resolver.lifetime = _DNS_LIFETIME_TIMEOUT_SECONDS
+    if name_srv_ip:
+        resolver.nameservers = [name_srv_ip]
     return resolver
 
 
-def get_primary_nameserver(hostname):
-    """Query DNS for the primary nameserver (SOA) for the given hostname.
+def _get_primary_nameserver(hostname):
+    """
+    Query DNS for the primary nameserver (SOA) for the given hostname.
     """
     dq = deque(hostname.split('.'))
     while len(dq) > 1:
