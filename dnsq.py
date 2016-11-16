@@ -190,11 +190,9 @@ def _exec_query(hostname, record_type, name_srv_ip=None):
         # if it's not specified or timed out then use default nameserver
         return _get_default_resolver().query(hostname, record_type, tcp=True)
 
-    # in case of timeouts and socket errors return []
-    except dns.exception.Timeout:
-        return []
-
-    except socket.error:
+    except (dns.exception.Timeout,
+            dns.resolver.NoNameservers,
+            socket.error):
         return []
 
 
