@@ -99,7 +99,7 @@ def test_mx_lookup():
             assert_raises(Exception, dnsq.mx_hosts_for, 'host.com')
 
 
-@patch.object(dnsq, '_get_primary_nameserver', Mock(return_value='ns.com'))
+@patch.object(dnsq, 'get_primary_nameserver', Mock(return_value='ns.com'))
 @patch.object(dnsq, 'query_dns')
 def test_spf_record_for(dns):
     # No SPF records
@@ -143,4 +143,4 @@ def test_ptr_record_for():
 @patch.object(dnsq, 'query_dns')
 def test_get_primary_nameserver(query_dns):
     query_dns.side_effect = [[], ['srv1.com.', 'srv2.com.']]
-    eq_('srv1.com', dnsq._get_primary_nameserver('tratata.ololo.com'))
+    eq_('srv1.com', dnsq.get_primary_nameserver('tratata.ololo.com'))

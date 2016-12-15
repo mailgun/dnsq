@@ -33,31 +33,16 @@ _thread_local = threading.local()
 _thread_local.resolver = None
 
 
-def query_dns(hostname, record_type, name_srv=None):
+def get_primary_nameserver(hostname):
     """
-    Runs simple DNS queries, like:
-        >>> query_dns('mailgun.net', 'txt')
-        ['v=spf1 include:_spf.mailgun.org ~all']
+    Query DNS for the primary nameserver (SOA) for the given hostname.
     """
-    try:
-        # if nameserver was specified, convert it into IP:
-        name_srv_ip = None
-        if name_srv:
-            ips = query_dns(name_srv, 'A')
-            if ips:
-                name_srv_ip = ips[0]
-
-        records = _exec_query(hostname, record_type, name_srv_ip)
-        if record_type.lower() == 'txt':
-            return [record.to_text().strip("\"").replace('" "', '') for record
-                    in records]
-        else:
-            return [record.to_text() for record in records]
-
-    # no entry?
-    except (
-    dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
-        return []
+    dq = deque(hostname.split('.'))
+    while len(dq) > 1:
+        soa = query_dns('.'.join(dq), 'SOA')
+        if soa:
+            return soa[0].split(" ")[0].strip(".")
+        dq.popleft()
 
 
 def mx_hosts_for(hostname):
@@ -160,7 +145,7 @@ def spf_record_for(hostname, bypass_cache=True):
     try:
         primary_ns = None
         if bypass_cache:
-            primary_ns = _get_primary_nameserver(hostname)
+            primary_ns = get_primary_nameserver(hostname)
 
         txt_records = query_dns(hostname, 'txt', primary_ns)
         spf_records = [r for r in txt_records if r.strip().startswith('v=spf')]
@@ -172,6 +157,33 @@ def spf_record_for(hostname, bypass_cache=True):
         _log.exception(e)
 
     return ''
+
+
+def query_dns(hostname, record_type, name_srv=None):
+    """
+    Runs simple DNS queries, like:
+        >>> query_dns('mailgun.net', 'txt')
+        ['v=spf1 include:_spf.mailgun.org ~all']
+    """
+    try:
+        # if nameserver was specified, convert it into IP:
+        name_srv_ip = None
+        if name_srv:
+            ips = query_dns(name_srv, 'A')
+            if ips:
+                name_srv_ip = ips[0]
+
+        records = _exec_query(hostname, record_type, name_srv_ip)
+        if record_type.lower() == 'txt':
+            return [record.to_text().strip("\"").replace('" "', '') for record
+                    in records]
+        else:
+            return [record.to_text() for record in records]
+
+    # no entry?
+    except (
+            dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
+        return []
 
 
 def _exec_query(hostname, record_type, name_srv_ip=None):
@@ -215,15 +227,3 @@ def _new_resolver(name_srv_ip=None):
     if name_srv_ip:
         resolver.nameservers = [name_srv_ip]
     return resolver
-
-
-def _get_primary_nameserver(hostname):
-    """
-    Query DNS for the primary nameserver (SOA) for the given hostname.
-    """
-    dq = deque(hostname.split('.'))
-    while len(dq) > 1:
-        soa = query_dns('.'.join(dq), 'SOA')
-        if soa:
-            return soa[0].split(" ")[0].strip(".")
-        dq.popleft()
