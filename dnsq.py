@@ -159,7 +159,7 @@ def spf_record_for(hostname, bypass_cache=True):
     return ''
 
 
-def query_dns(hostname, record_type, name_srv=None):
+def query_dns(hostname, record_type, name_srv=None, tcp=True):
     """
     Runs simple DNS queries, like:
         >>> query_dns('mailgun.net', 'txt')
@@ -173,7 +173,7 @@ def query_dns(hostname, record_type, name_srv=None):
             if ips:
                 name_srv_ip = ips[0]
 
-        records = _exec_query(hostname, record_type, name_srv_ip)
+        records = _exec_query(hostname, record_type, name_srv_ip, tcp=tcp)
         if record_type.lower() == 'txt':
             return [record.to_text().strip("\"").replace('" "', '') for record
                     in records]
@@ -186,7 +186,7 @@ def query_dns(hostname, record_type, name_srv=None):
         return []
 
 
-def _exec_query(hostname, record_type, name_srv_ip=None):
+def _exec_query(hostname, record_type, name_srv_ip=None, tcp=True):
     """
     Execute a DNS query against a given name source.
     """
@@ -195,12 +195,12 @@ def _exec_query(hostname, record_type, name_srv_ip=None):
         if name_srv_ip:
             resolver = _new_resolver(name_srv_ip)
             try:
-                return resolver.query(hostname, record_type, tcp=True)
+                return resolver.query(hostname, record_type, tcp=tcp)
             except dns.exception.Timeout:
                 pass
 
         # if it's not specified or timed out then use default nameserver
-        return _get_default_resolver().query(hostname, record_type, tcp=True)
+        return _get_default_resolver().query(hostname, record_type, tcp=tcp)
 
     except (dns.exception.Timeout,
             dns.resolver.NoNameservers,
